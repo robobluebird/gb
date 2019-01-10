@@ -1,0 +1,270 @@
+INCLUDE "gbhw.inc"
+
+SX EQU _OAMRAM
+SY EQU _OAMRAM + 1
+SN EQU _OAMRAM + 2
+SA EQU _OAMRAM + 3
+
+PAD EQU _RAM
+
+SECTION "hello_joypad", ROM0[$0100]
+
+  nop
+  jp begin
+
+  ROM_HEADER ROM_NOMBC, ROM_SIZE_32KBYTE, RAM_SIZE_0KBYTE
+
+begin:
+
+  nop
+  di
+  ld sp, $FFFF
+  
+  ld a, %11100100
+  ld [rBGP], a
+  ld [rOBP0], a
+
+  ld a, %00011011
+  ld [rOBP1], a
+
+  ld a, 0
+  ld [rSCX], a
+  ld [rSCY], a
+
+  call turn_off_lcd
+
+load_tiles:
+
+  ld hl, tiles
+  ld de, _VRAM
+  ld b, 32
+
+load_tiles_loop:
+
+  ld a, [hl]
+  ld [de], a
+  dec b
+  jp z, clear_background_map
+  inc hl
+  inc de
+  jp load_tiles_loop
+
+clear_background_map:
+
+  ld hl, _SCRN0
+  ld de, 32 * 32
+
+clear_background_map_loop:
+
+  ld a, 0
+  ld [hl], a
+  dec de
+  ld a, d
+  or e
+  jp z, clear_sprites
+  inc hl
+  jp clear_background_map_loop
+
+clear_sprites:
+
+  ld hl, _OAMRAM
+  ld de, 40 * 4
+
+clear_sprites_loop:
+
+  ld a, 0
+  ld [hl], a
+  dec de
+  ld a, d
+  or e
+  jp z, create_sprite
+  inc hl
+  jp clear_sprites_loop
+
+create_sprite:
+
+  ld a, 74
+  ld [SY], a
+  ld a, 90
+  ld [SX], a
+  ld a, 1
+  ld [SN], a
+  ld a, 0
+  ld [SA], a
+
+activate_display:
+
+  ld a, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9800|LCDCF_BGON|LCDCF_OBJ8|LCDCF_OBJON
+  ld [rLCDC], a
+
+main:
+
+  call read_input
+
+wait:
+
+  ld a, [rLY]
+  cp 145
+  jp nz, wait
+
+move:
+
+  ld a, [PAD]
+  and %10000000
+  call nz, move_right
+
+  ld a, [PAD]
+  and %01000000
+  call nz, move_left
+
+  ld a, [PAD]
+  and %00100000
+  call nz, move_up
+
+  ld a, [PAD]
+  and %00010000
+  call nz, move_down
+
+  ld a, [PAD]
+  and %00000001
+  call nz, swap_palette
+
+  call slow_down
+
+  jp main
+
+move_right:
+
+  ld a, [SX]
+  cp 160
+  ret z
+
+  inc a
+  ld [SX], a
+  ret
+
+move_left:
+
+  ld a, [SX]
+  cp 8
+  ret z
+
+  dec a
+  ld [SX], a
+  ret
+
+move_up:
+
+  ld a, [SY]
+  cp 16
+  ret z
+
+  dec a
+  ld [SY], a
+  ret
+
+move_down:
+
+  ld a, [SY]
+  cp 152
+  ret z
+
+  inc a
+  ld [SY], a
+  ret
+
+swap_palette:
+
+  ld a, [SA]
+  and %00010000
+  jp z, palette0
+
+palette1:
+
+  ld a, [SA]
+  res 4, a
+  ld [SA], a
+
+  call slow_down
+
+  ret
+
+palette0:
+
+  ld a, [SA]
+  set 4, a
+  ld [SA], a
+
+  call slow_down
+
+  ret
+
+read_input:
+
+  ld a, %00100000
+  ld [rP1], a
+
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+
+  and $0F
+  swap a
+  ld b, a
+
+  ld a, %00010000
+  ld [rP1], a
+
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+
+  and $0F
+  or b
+
+  cpl
+  ld [PAD], a
+
+  ret
+
+slow_down:
+
+  ld de, 2000
+
+delay:
+
+  dec de
+  ld a, d
+  or e
+  jp z, end_delay
+  nop
+  jp delay
+
+end_delay:
+
+  ret
+
+turn_off_lcd:
+
+  ld a, [rLCDC]
+  rlca
+  ret nc 
+
+wait_for_vblank:
+
+  ld a, [rLY]
+  cp 145
+  jr nz, wait_for_vblank
+  ld a, [rLCDC]
+  res 7, a
+  ld [rLCDC], a
+  ret
+
+tiles:
+  DB  $AA, $00, $44, $00, $AA, $00, $11, $00
+  DB  $AA, $00, $44, $00, $AA, $00, $11, $00
+  DB  $3E, $3E, $41, $7F, $41, $6B, $41, $7F
+  DB  $41, $63, $41, $7F, $3E, $3E, $00, $00
+end_tiles:

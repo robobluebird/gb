@@ -1,0 +1,77 @@
+INCLUDE "gbhw.inc"
+
+SECTION "hello", ROM0[$0100]
+  nop
+  jp init
+
+  ROM_HEADER ROM_NOMBC, ROM_SIZE_32KBYTE, RAM_SIZE_0KBYTE
+
+init:
+  nop
+  di
+
+  ld sp, $ffff
+  ld a, %11100100
+  ld [rBGP], a
+  ld a, 0
+  ld [rSCX], a
+  ld [rSCY], a
+
+  call turn_off_lcd 
+
+  ld hl, tiles
+  ld de, _VRAM
+  ld b, 32
+
+load_tiles:
+  ld a, [hl]
+  ld [de], a 
+  dec b
+  jr z, end_load_tiles
+  inc hl
+  inc de
+  jr load_tiles
+end_load_tiles:
+
+  ld hl, _SCRN0
+  ld de, 32 * 32
+
+clear_screen:
+  ld a, 0
+  ld [hl], a 
+  dec de
+  ld a, d
+  or e
+  jp z, end_clear_screen
+  inc hl
+  jp clear_screen
+end_clear_screen:
+
+  ld a, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9800|LCDCF_BGON|LCDCF_OBJ8|LCDCF_OBJOFF
+  ld [rLCDC], a
+
+loop:
+  halt
+  nop
+  jr loop
+
+turn_off_lcd:
+  ld a, [rLCDC]
+  rlca
+  ret nc 
+
+wait_for_vblank:
+  ld a, [rLY]
+  cp 145
+  jr nz, wait_for_vblank
+  ld a, [rLCDC]
+  res 7, a
+  ld [rLCDC], a
+  ret
+
+tiles:
+  DB $00, $00, $00, $00, $00, $00, $00, $00
+  DB $00, $00, $00, $00, $00, $00, $00, $00
+  DB $7C, $7C, $82, $FE, $82, $D6, $82, $D6
+  DB $82, $FE, $82, $BA, $82, $C6, $7C, $7C
+end_tiles:
