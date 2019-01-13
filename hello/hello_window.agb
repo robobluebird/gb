@@ -1,0 +1,449 @@
+INCLUDE "gbhw.inc"
+
+_SPR0Y EQU _OAMRAM + 0
+_SPR0X EQU _OAMRAM + 1
+_SPR0N EQU _OAMRAM + 2
+_SPR0A EQU _OAMRAM + 3
+
+_SPR1Y EQU _OAMRAM + 4
+_SPR1X EQU _OAMRAM + 5
+_SPR1N EQU _OAMRAM + 6
+_SPR1A EQU _OAMRAM + 7
+
+_SPR2Y EQU _OAMRAM + 8
+_SPR2X EQU _OAMRAM + 9
+_SPR2N EQU _OAMRAM + 10
+_SPR2A EQU _OAMRAM + 11
+
+_SPR3Y EQU _OAMRAM + 12
+_SPR3X EQU _OAMRAM + 13
+_SPR3N EQU _OAMRAM + 14
+_SPR3A EQU _OAMRAM + 15
+
+_PAD EQU _RAM
+_SPRSP EQU _RAM + 1 ; second-column sprite position
+_SPRF EQU _RAM + 2 ; sprite offset
+_STP EQU _RAM + 3
+
+SECTION "hello_window", ROM0[$0100]
+
+  nop
+  jp begin
+
+  ROM_HEADER ROM_NOMBC, ROM_SIZE_32KBYTE, RAM_SIZE_0KBYTE
+
+begin:
+
+  nop
+  di
+  ld sp, $FFFF
+
+  ld a, 0
+  ld [_STP], a
+
+  ld hl, _SPRSP
+  ld [hl], -8
+
+  ld hl, _SPRF
+  ld [hl], 0
+
+  ld a, %11100100
+  ld [rBGP], a
+  ld [rOBP0], a
+
+  ld a, %11010000
+  ld [rOBP1], a
+
+  ld a, 0
+  ld [rSCX], a
+  ld [rSCY], a
+
+  call turn_off_lcd
+
+  ld hl, tiles
+  ld de, _VRAM
+  ld bc, end_tiles - tiles
+  call copy_memory
+
+  ld hl, level 
+  ld de, _SCRN0
+  ld bc, 32 * 32
+  call copy_memory
+
+  ld hl, start 
+  ld de, _SCRN1
+  ld bc, 32 * 32
+  call copy_memory
+
+  ld l, 0
+  ld de, _OAMRAM
+  ld bc, 40 * 4
+  call fill_memory
+
+sprites:
+
+  ld a, 136
+  ld [_SPR0Y], a
+  ld a, 80
+  ld [_SPR0X], a
+  ld a, 0
+  ld [_SPR0N], a
+  ld a, %00110000
+  ld [_SPR0A], a
+
+  ld a, 136 + 8
+  ld [_SPR1Y], a
+  ld a, 80
+  ld [_SPR1X], a
+  ld a, 1
+  ld [_SPR1N], a
+  ld a, %00110000
+  ld [_SPR1A], a
+
+  ld a, 136
+  ld [_SPR2Y], a
+  ld a, [_SPRSP]
+  add 80
+  ld [_SPR2X], a
+  ld a, 2
+  ld [_SPR2N], a
+  ld a, %00110000
+  ld [_SPR2A], a
+
+  ld a, 136 + 8
+  ld [_SPR3Y], a
+  ld a, [_SPRSP]
+  add 80
+  ld [_SPR3X], a
+  ld a, 3
+  ld [_SPR3N], a
+  ld a, %00110000
+  ld [_SPR3A], a
+
+  ld a, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9800|LCDCF_BGON|LCDCF_OBJ8|LCDCF_OBJON|LCDCF_WIN9C00
+  ld [rLCDC], a
+
+main:
+
+  call read_input
+
+wait:
+
+  ld a, [rLY]
+  cp 145
+  jr nz, wait
+
+move:
+
+  ld a, [_PAD]
+  and %00010000
+  call nz, move_right
+
+  ld a, [_PAD]
+  and %00100000
+  call nz, move_left
+
+  ld a, [_PAD]
+  and %00001000
+  call z, start_button_up
+  call nz, start_button_down
+
+  ld a, [_PAD]
+  and %11111111
+  call z, nothing
+
+  jp main
+
+move_right:
+
+  ld b, -8
+  ld a, [_SPR0X]
+  cp 120
+  jp nz, reposition_horizontally
+
+  ld a, [rSCX]
+  inc a
+  ld [rSCX], a
+
+  call determine_animation_sprites
+  call load_animation_sprites 
+
+  ret
+
+move_left:
+
+  ld b, 8
+  ld a, [_SPR0X]
+  cp 16 
+  jp nz, reposition_horizontally
+
+  ld a, [rSCX]
+  dec a
+  ld [rSCX], a
+
+  call determine_animation_sprites
+  call load_animation_sprites 
+
+  ret
+
+reposition_horizontally:
+
+  push af
+  ld a, b
+  ld [_SPRSP], a
+  pop af
+
+  ld c, a
+
+  ld a, b
+  cp 8
+  jr z, decrement_position
+
+increment_position
+
+  ld a, c
+  inc a
+  jr save_position
+
+decrement_position:
+
+  ld a, c
+  dec a
+
+save_position:
+
+  ld [_SPR0X], a
+  ld [_SPR1X], a
+
+  ld hl, _SPRSP
+  add a, [hl]
+  ld [_SPR2X], a
+  ld [_SPR3X], a
+
+  ld a, b
+  cp 8
+  jr z, reflect
+
+  ld a, [_SPR0A]
+  set 5, a
+  jr persist_sprite_attrs
+
+reflect:
+
+  ld a, [_SPR0A]
+  res 5, a
+
+persist_sprite_attrs:
+  ld [_SPR0A], a
+  ld [_SPR1A], a
+  ld [_SPR2A], a
+  ld [_SPR3A], a
+
+  call determine_animation_sprites
+  call load_animation_sprites
+
+  ret
+
+start_button_up:
+
+  ld a, 0
+  ld [_STP], a
+  ret
+
+start_button_down:
+
+  ld a, [_STP]
+  cp 1
+  ret z
+
+  ld a, 1
+  ld [_STP], a
+
+  ld a, 8
+  ld [rWX], a
+
+  ld a, 144
+  ld [rWY], a
+
+  ld a, [rLCDC]
+  or LCDCF_WINON
+  res 1, a
+  ld [rLCDC], a
+
+  ld a, 144
+
+start_map:
+
+  ld a, 144
+
+begin_start_map:
+
+  push af
+  ld bc, 1000
+  call slow_down
+  pop af
+
+  dec a
+  ld [rWY], a
+  jr nz, begin_start_map
+
+read_input_on_start_screen:
+
+  call read_input
+  and %00001000
+  jr z, read_input_on_start_screen
+
+end_start_map:
+
+  push af
+  ld bc, 1000
+  call slow_down
+  pop af
+
+  inc a
+  ld [rWY], a
+  cp 144
+  jr nz, end_start_map
+
+  ld a, [rLCDC]
+  res 5, a
+  or LCDCF_OBJON
+  ld [rLCDC], a
+
+  ret
+
+nothing:
+
+  ld hl, _SPRF
+  ld [hl], 0
+
+  ld a, 0
+  ld [_SPR0N], a
+  inc a
+  ld [_SPR1N], a
+  inc a
+  ld [_SPR2N], a
+  inc a
+  ld [_SPR3N], a
+  ret
+
+determine_animation_sprites:
+
+  ld a, [_SPRF]
+  add 4
+  ld [_SPRF], a
+  cp 12
+  ret nz
+
+  ld a, 4
+  ld [_SPRF], a
+  ret
+
+load_animation_sprites:
+
+  ld a, [_SPRF]
+
+  ld [_SPR0N], a
+  inc a
+  ld [_SPR1N], a
+  inc a
+  ld [_SPR2N], a
+  inc a
+  ld [_SPR3N], a
+  ret
+
+read_input:
+
+  ld a, %00100000
+  ld [rP1], a
+
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+
+  and $0F
+  swap a
+  ld b, a
+
+  ld a, %00010000
+  ld [rP1], a
+
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+
+  and $0F
+  or b
+
+  cpl
+  ld [_PAD], a
+
+  ret
+
+slow_down:
+
+delay:
+
+  dec bc
+  ld a, b
+  or c
+  jp z, end_delay
+  nop
+  jp delay
+
+end_delay:
+
+  ret
+
+turn_off_lcd:
+
+  ld a, [rLCDC]
+  rlca
+  ret nc 
+
+wait_for_vblank:
+
+  ld a, [rLY]
+  cp 145
+  jr nz, wait_for_vblank
+  ld a, [rLCDC]
+  res 7, a
+  ld [rLCDC], a
+  ret
+  
+copy_memory:
+
+  ld a, [hl]
+  ld [de], a
+  dec bc
+  ld a, b
+  or c
+  ret z
+  inc hl
+  inc de
+  jr copy_memory
+
+fill_memory:
+
+  ld a, l
+  ld [de], a
+  dec bc
+  ld a, b
+  or c
+  ret z
+  inc de
+  jr fill_memory
+
+tiles:
+INCLUDE "sprites.z80"
+end_tiles:
+
+level:
+INCLUDE "level.z80"
+end_level:
+
+start:
+INCLUDE "start.z80"
+end_start:

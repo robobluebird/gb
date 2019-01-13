@@ -6,6 +6,7 @@ SN EQU _OAMRAM + 2
 SA EQU _OAMRAM + 3
 
 PAD EQU _RAM
+AP EQU _RAM + 1
 
 SECTION "hello_joypad", ROM0[$0100]
 
@@ -19,6 +20,9 @@ begin:
   nop
   di
   ld sp, $FFFF
+
+  ld a, 0
+  ld [AP], a
   
   ld a, %11100100
   ld [rBGP], a
@@ -127,9 +131,8 @@ move:
 
   ld a, [PAD]
   and %00000001
-  call nz, swap_palette
-
-  call slow_down
+  call z, a_button_up 
+  call nz, a_button_down
 
   jp main
 
@@ -173,7 +176,21 @@ move_down:
   ld [SY], a
   ret
 
-swap_palette:
+a_button_up:
+
+  ld a, 0
+  ld [AP], a
+  
+  ret
+
+a_button_down:
+
+  ld a, [AP]
+  cp 1
+  ret z
+
+  ld a, 1
+  ld [AP], a
 
   ld a, [SA]
   and %00010000
