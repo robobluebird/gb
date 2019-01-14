@@ -65,12 +65,12 @@ begin:
   ld bc, end_tiles - tiles
   call copy_memory
 
-  ld hl, level 
+  ld hl, map 
   ld de, _SCRN0
   ld bc, 32 * 32
   call copy_memory
 
-  ld hl, start 
+  ld hl, window 
   ld de, _SCRN1
   ld bc, 32 * 32
   call copy_memory
@@ -248,6 +248,7 @@ start_button_up:
 
   ld a, 0
   ld [_STP], a
+
   ret
 
 start_button_down:
@@ -270,40 +271,48 @@ start_button_down:
   res 1, a
   ld [rLCDC], a
 
-  ld a, 144
-
-start_map:
+show_window:
 
   ld a, 144
 
-begin_start_map:
+show_window_loop:
 
   push af
-  ld bc, 1000
+  ld bc, 100
   call slow_down
   pop af
 
   dec a
   ld [rWY], a
-  jr nz, begin_start_map
+  jr nz, show_window_loop
 
-read_input_on_start_screen:
+read_input_on_window:
 
   call read_input
   and %00001000
-  jr z, read_input_on_start_screen
 
-end_start_map:
+  call z, start_button_up
+
+  jr z, read_input_on_window
+  
+  ld a, [_STP]
+  cp 1
+  jr z, read_input_on_window
+
+  ld a, 1
+  ld [_STP], a
+
+hide_window:
 
   push af
-  ld bc, 1000
+  ld bc, 100
   call slow_down
   pop af
 
   inc a
   ld [rWY], a
   cp 144
-  jr nz, end_start_map
+  jr nz, hide_window
 
   ld a, [rLCDC]
   res 5, a
@@ -440,10 +449,10 @@ tiles:
 INCLUDE "sprites.z80"
 end_tiles:
 
-level:
-INCLUDE "level.z80"
-end_level:
+map:
+INCLUDE "map.z80"
+end_map:
 
-start:
-INCLUDE "start.z80"
-end_start:
+window:
+INCLUDE "window.z80"
+end_window:
