@@ -1,0 +1,42 @@
+include "gbhw.inc"
+
+_delay   equ _RAM
+_timing  equ _RAM + 1
+_seconds equ _RAM + 2
+_minutes equ _RAM + 3
+_hours   equ _RAM + 4
+_pad     equ _RAM + 5
+_pos     equ _SCRN0 + 32 * 4 + 6
+
+section "vblank", rom0[$0040]
+
+  call draw_chronometer
+  reti
+
+section "timer_overflow", rom0[$0500]
+
+  call control_timer
+  reti
+
+section "start", rom0[$0100]
+
+  nop
+  jp setup
+
+setup:
+
+  nop
+  di
+  ld sp, $ffff
+
+  ROM_HEADER ROM_NOMBC, ROM_SIZE_32KBYTE, RAM_SIZE_0KBYTE
+
+begin:
+
+  halt
+  nop
+  jp begin
+
+draw_chronometer:
+
+control_timer:
