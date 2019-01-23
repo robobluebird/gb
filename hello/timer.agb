@@ -1,21 +1,22 @@
 include "gbhw.inc"
 
-_delay   equ _RAM
-_timing  equ _RAM + 1
+_timer_ticks equ _RAM
+_timer_activated equ _RAM + 1
 _seconds equ _RAM + 2
 _minutes equ _RAM + 3
-_hours   equ _RAM + 4
-_pad     equ _RAM + 5
-_pos     equ _SCRN0 + 32 * 4 + 6
+_hours equ _RAM + 4
+_pad equ _RAM + 5
+
+_chronometer_position equ _SCRN0 + 32 * 4 + 6
 
 section "vblank", rom0[$0040]
 
-  call draw_chronometer
+  call draw
   reti
 
-section "timer_overflow", rom0[$0500]
+section "timer_overflow", rom0[$0050]
 
-  call control_timer
+  call timer
   reti
 
 section "start", rom0[$0100]
@@ -23,20 +24,431 @@ section "start", rom0[$0100]
   nop
   jp setup
 
+  ROM_HEADER ROM_NOMBC, ROM_SIZE_32KBYTE, RAM_SIZE_0KBYTE
+
 setup:
 
   nop
   di
   ld sp, $ffff
 
-  ROM_HEADER ROM_NOMBC, ROM_SIZE_32KBYTE, RAM_SIZE_0KBYTE
-
 begin:
 
-  halt
+  ld a, 0
+  ld [rTAC], a
+
+  ld a, 51
+  ld [rTMA], a
+  ld [rTIMA], a
+
+  ld a, 0
+  ld [_timer_ticks], a
+  ld [_timer_activated], a
+  ld [_seconds], a
+  ld [_minutes], a
+  ld [_hours], a
+
+  ld a, %11100100
+  ld [rBGP], a
+  ld [rOBP0], a
+
+  ld a, 0
+  ld [rSCX], a
+  ld [rSCY], a
+
+  call turn_off_lcd
+
+  ld hl, tiles
+  ld de, _VRAM
+  ld bc, end_of_tiles - tiles
+
+  call copy_memory
+
+  ld de, _SCRN0
+  ld bc, 32 * 32
+  ld l, 11
+
+  call fill_memory
+
+  ld de, _OAMRAM
+  ld bc, 40 * 4
+  ld l, 0
+
+  call fill_memory
+
+  call draw
+
+  ld a, LCDCF_ON|LCDCF_BG8000|LCDCF_BG9800|LCDCF_BGON|LCDCF_OBJ8
+  ld [rLCDC], a
+
+control:
+
+  call read_input
+
+  ld a, [_pad]
+  and %00000001
+  call nz, activate
+
+  ld a, [_pad]
+  and %00000010
+  call nz, reset
+
+  ld bc, 15000
+  call slow_down
+  jr control
+
+activate:
+
+  ld a, [_timer_activated]
+  cp 1
+  jp z, deactivate
+  ld a, 1
+  ld [_timer_activated], a
+
+  ld a, %00000100
+  ld [rTAC], a
+
+  ld a, %00000101
+  ld [rIE], a
+  ei
+  ret
+
+deactivate:
+
+  ld a, 0
+  ld [_timer_activated], a
+
+  ld a, %00000000
+  ld [rTAC], a
+
+  ld a, %00000101
+  ld [rIE], a
+  di
+
+  ret
+
+reset:
+
+  ld a, 0
+  ld [_seconds], a
+  ld [_minutes], a
+  ld [_hours], a
+
+  ld a, 51
+  ld [rTIMA], a
+
+  ld a, [_timer_activated]
+  ret z
+
+  call wait_for_vblank
+  call draw
+
+  ret
+
+draw:
+
+  ld a, [_hours]
+  and $f0
+  swap a
+  ld [_chronometer_position], a
+
+  ld a, [_hours]
+  and $0f
+  ld [_chronometer_position + 1], a
+
+  ld a, 10
+  ld [_chronometer_position + 2], a
+
+  ld a, [_minutes]
+  and $f0
+  swap a
+  ld [_chronometer_position + 3], a
+
+  ld a, [_minutes]
+  and $0f
+  ld [_chronometer_position + 4], a
+
+  ld a, 10
+  ld [_chronometer_position + 5], a
+
+  ld a, [_seconds]
+  and $f0
+  swap a
+  ld [_chronometer_position + 6], a
+
+  ld a, [_seconds]
+  and $0f
+  ld [_chronometer_position + 7], a
+
+  ret
+
+timer:
+
+  ld a, [_timer_ticks]
+  cp 20
+  jr z, increment
+  inc a
+  ld [_timer_ticks], a
+
+  ret
+
+increment:
+
+  ld a, 0
+  ld [_timer_ticks], a
+
+  ld a, [_seconds]
+  inc a
+  daa
+  cp 96
+  jr z, minutes
+
+  ld [_seconds], a
+
+  ret
+
+minutes:
+
+  ld a, 0
+  ld [_seconds], a
+
+  ld a, [_minutes]
+  inc a
+  daa
+  cp 96
+  jr z, hours
+
+  ld [_minutes], a
+
+  ret
+
+hours:
+
+  ld a, 0
+  ld [_minutes], a
+
+  ld a, [_hours]
+  inc a
+  daa
+  cp 36
+  jr z, do_reset
+
+  ld [_hours], a
+
+  ret
+
+do_reset:
+
+  call reset
+
+  ret
+
+read_input:
+
+  ld a, 0
+  ld [_pad], a
+
+  ld a, %00100000
+  ld [rP1], a
+
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+
+  and $0f
+  swap a
+  ld b, a
+  ld a, %00010000
+  ld [rP1], a
+
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+  ld a, [rP1]
+
+  and $0f
+  or b
+
+  cpl
+  ld [_pad], a
+
+  ld a, $30
+  ld [rP1], a
+
+  ret
+
+turn_off_lcd:
+
+  ld a, [rLCDC]
+  rlca
+  ret nc
+
+  call wait_for_vblank
+
+  ld a, [rLCDC]
+  res 7, a
+  ld [rLCDC], a
+
+  ret
+
+wait_for_vblank:
+
+  ld a, [rLY]
+  cp 145
+  jr nz, wait_for_vblank
+
+slow_down:
+
+delay:
+
+  dec bc
+  ld a, b
+  or c
+  jr z, end_delay
   nop
-  jp begin
+  jr delay
 
-draw_chronometer:
+end_delay:
 
-control_timer:
+  ret
+
+copy_memory:
+
+  ld a, [hl]
+  ld [de], a
+  dec bc
+  ld a, c
+  or b
+  ret z
+  inc hl
+  inc de
+  jr copy_memory
+
+fill_memory:
+
+  ld a, l
+  ld [de], a
+  dec bc
+  ld a, c
+  or b
+  ret z
+  inc de
+  jr fill_memory
+
+tiles:
+
+DW  `00000000
+DW  `00333300
+DW  `03000330
+DW  `03003030
+DW  `03030030
+DW  `03300030
+DW  `00333300
+DW  `00000000
+; 1
+DW  `00000000
+DW  `00003000
+DW  `00033000
+DW  `00003000
+DW  `00003000
+DW  `00003000
+DW  `00333300
+DW  `00000000
+; 2
+DW  `00000000
+DW  `00333300
+DW  `03000030
+DW  `00003300
+DW  `00030000
+DW  `00300000
+DW  `03333330
+DW  `00000000
+; 3
+DW  `00000000
+DW  `00333300
+DW  `03000030
+DW  `00003300
+DW  `00000030
+DW  `03000030
+DW  `00333300
+DW  `00000000
+; 4
+DW  `00000000
+DW  `00000300
+DW  `00003300
+DW  `00030300
+DW  `00333300
+DW  `00000300
+DW  `00000300
+DW  `00000000
+; 5
+DW  `00000000
+DW  `03333330
+DW  `03000000
+DW  `00333300
+DW  `00000030
+DW  `03000030
+DW  `00333300
+DW  `00000000
+; 6
+DW  `00000000
+DW  `00003000
+DW  `00030000
+DW  `00300000
+DW  `03333300
+DW  `03000030
+DW  `00333300
+DW  `00000000
+; 7
+DW  `00000000
+DW  `03333330
+DW  `00000300
+DW  `00003000
+DW  `00030000
+DW  `00300000
+DW  `00300000
+DW  `00000000
+; 8
+DW  `00000000
+DW  `00333300
+DW  `03000030
+DW  `00333300
+DW  `03000030
+DW  `03000030
+DW  `00333300
+DW  `00000000
+ 
+; 9
+DW  `00000000
+DW  `00333300
+DW  `03000030
+DW  `03000030
+DW  `00333300
+DW  `00003000
+DW  `00330000
+DW  `00000000
+ 
+; :
+DW  `00000000
+DW  `00033000
+DW  `00033000
+DW  `00000000
+DW  `00033000
+DW  `00033000
+DW  `00000000
+DW  `00000000
+ 
+; empty tile
+DW  `00000000
+DW  `00000000
+DW  `00000000
+DW  `00000000
+DW  `00000000
+DW  `00000000
+DW  `00000000
+DW  `00000000
+
+end_of_tiles:
